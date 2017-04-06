@@ -4,8 +4,10 @@ package dictionary
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -17,8 +19,10 @@ type DictLoader interface {
 	AddToken(Token)
 }
 
+var dict_reg = regexp.MustCompile(`^(.+?)( [0-9]+)?( [a-z]+)?$`)
+
 func loadDictionary(file *os.File) (<-chan Token, <-chan error) {
-	tokenCh, errCh := make(chan Token), make(chan error)
+	tokenCh, errCh := make(chan Token), make(chan error, 1)
 
 	go func() {
 		defer close(tokenCh)
@@ -26,19 +30,22 @@ func loadDictionary(file *os.File) (<-chan Token, <-chan error) {
 		scanner := bufio.NewScanner(file)
 		var token Token
 		var line string
-		var fields []string
 		var err error
 		for scanner.Scan() {
 			line = scanner.Text()
-			fields = strings.Split(line, " ")
+			fields := dict_reg.FindStringSubmatch(strings.TrimSpace(line))
+			if len(fields) == 0 {
+				continue
+			}
+			fields = fields[1:]
 			token.text = strings.TrimSpace(strings.Replace(fields[0], "\ufeff", "", 1))
-			if length := len(fields); length > 1 {
-				token.frequency, err = strconv.ParseFloat(fields[1], 64)
+			if fields[1] != "" {
+				token.frequency, err = strconv.ParseFloat(strings.TrimSpace(fields[1]), 64)
 				if err != nil {
-					errCh <- err
+					errCh <- fmt.Errorf("Error:%v, line(%s)", err, line)
 					return
 				}
-				if length > 2 {
+				if fields[2] != "" {
 					token.pos = strings.TrimSpace(fields[2])
 				}
 			}
